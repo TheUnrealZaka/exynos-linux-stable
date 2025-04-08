@@ -149,8 +149,5 @@ drivers/kernelsu
 # Failed patch
 *.rej
 
-# xxtr-zip
-xxtr-zip/
-
 # toolchain
 toolchain

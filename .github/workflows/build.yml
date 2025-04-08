@@ -1,0 +1,152 @@
+name: Build Exynos 9810 Kernel
+
+on:
+  push:
+    branches: [ main ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  KERNEL_VERSION: "46.0"
+  MINDPATCHED_VERSION: "3.1"
+  MAINTAINER: "TheUnrealZaka"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    
+    steps:
+    - name: Set Build Time
+      run: echo "BUILD_TIME=$(date +'%Y-%m-%d %H:%M:%S')" >> $GITHUB_ENV
+
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        submodules: true
+
+    - name: Set up build environment
+      run: |
+        sudo apt update && sudo apt install -y git device-tree-compiler lz4 xz-utils zlib1g-dev openjdk-17-jdk gcc g++ python3 python-is-python3 p7zip-full android-sdk-libsparse-utils erofs-utils \
+        default-jdk git gnupg flex bison gperf build-essential zip curl libc6-dev libncurses-dev libx11-dev libreadline-dev libgl1 libgl1-mesa-dev \
+        python3 make sudo gcc g++ bc grep tofrodos python3-markdown libxml2-utils xsltproc zlib1g-dev python-is-python3 libc6-dev libtinfo6 \
+        make repo cpio kmod openssl libelf-dev pahole libssl-dev libarchive-tools zstd --fix-missing && wget http://security.ubuntu.com/ubuntu/pool/universe/n/ncurses/libtinfo5_6.3-2ubuntu0.1_amd64.deb && sudo dpkg -i libtinfo5_6.3-2ubuntu0.1_amd64.deb
+        
+    - name: Setup ccache
+      uses: hendrikmuhs/ccache-action@v1.2
+      with:
+        key: kernel-build
+        max-size: 2G
+
+    - name: Setup Toolchain
+      run: |
+        mkdir -p toolchain/{clang-20,gcc-arm64,gcc-arm}
+        wget -q https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/main/clang-r547379.tar.gz -O clang.tar.gz
+        tar xf clang.tar.gz -C toolchain/clang-20
+        git clone --depth=1 https://github.com/radcolor/aarch64-linux-gnu.git toolchain/gcc-arm64
+        git clone --depth=1 https://github.com/radcolor/arm-linux-gnueabi.git toolchain/gcc-arm
+
+    - name: Create Required Directories 
+      run: |
+        mkdir -p xxtr-zip/{Kernel,Kernel-ksu,Kernel-a11,Kernel-a11-ksu,Kernel-aosp,Kernel-aosp-ksu,Kernel-stock,Kernel-stock-ksu}/{crownlte,star2lte,starlte}
+        mkdir -p xxtr-zip/{Dtb,Dtb-erofs}/{crownlte,star2lte,starlte}
+
+    - name: Build Kernel
+      run: |
+        chmod +x build_kernel.sh
+        ./build_kernel.sh
+
+    - name: Package Kernel
+      run: |
+        mkdir -p release
+        find xxtr-zip -name "*.zip" -exec cp {} release/ \;
+        ls -la release/
+
+    - name: Create Release
+      if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+      uses: softprops/action-gh-release@v2
+      with:
+        name: "xxTR Kernel (MindPatched v${{ env.MINDPATCHED_VERSION }}) for Exynos 9810 Family"
+        tag_name: "v${{ env.KERNEL_VERSION }}-mindpatched-v${{ env.MINDPATCHED_VERSION }}"
+        files: release/*.zip
+        draft: false
+        prerelease: false
+        body: |
+          ## xxTR-Kernel v${{ env.KERNEL_VERSION }} + KernelSU-Next + SuSFS Patch (MindPatched v${{ env.MINDPATCHED_VERSION }})
+          A custom kernel optimized for Samsung Galaxy S9/S9+/Note 9, packed with advanced features for performance and functionality!
+
+          ### What is xxTR-Kernel MindPatched?
+          This is an enhanced version of xxTR-Kernel that integrates **KernelSU-Next** and **SuSFS** support for better root management, concealment, and performance improvements.
+
+          ### Features
+          - Added **KernelSU-Next** (1.0.6) and **SuSFS** (v1.5.5)
+          - Overclocking, custom voltage, and all xxTR Kernel features fully supported
+          - Compiled with the latest **Clang 20** for improved stability and performance
+
+          ### Changelog (MindPatched v${{ env.MINDPATCHED_VERSION }})
+          - Upgraded SuSFS patch to the latest version
+          - Upgraded KernelSU-Next to v1.0.6
+
+          ### What is SuSFS?
+          SuSFS is a rootkit on top of KernelSU, designed to hide root and KernelSU-related modifications. It can:
+          - Hide **debug ramdisks**
+          - Conceal custom ROMs (e.g., LineageOS)
+          - Mask **LSPosed**
+          - Spoof kernel names and more!
+
+          **Note:** SuSFS is experimental and may be unstable. Use it at your own risk!
+
+          ### Installation Instructions
+          1. Boot into custom recovery (TWRP recommended)
+          2. Wipe Dalvik/Cache (recommended)
+          3. Flash the kernel zip
+          4. Reboot system
+
+          ### Known Issues
+          - KernelSU or SuSFS glitches? Report them in our [Telegram Group](https://github.com/galaxybuild-project/exynos-linux-stable/blob/v${{ env.KERNEL_VERSION }}-mindpatched-v${{ env.MINDPATCHED_VERSION }}/galaxybuild_chat)
+          - For **Noble ROM 3.x or newer** users experiencing `/debug_ramdisk stderr` issues, try this alternate SuSFS module:
+            [Download here](https://t.me/galaxybuild_cloud/22) (susfs-module.zip)
+            Original SuSFS module (recommended):
+            [Download here](https://github.com/sidex15/susfs4ksu-module/releases/download/v1.5.2-v1.5.3-R12/ksu_module_susfs_1.5.2+.zip)
+
+          ### Compatibility
+          - **Noble ROM 4.x:** ✅
+          - **FloydRom T Build:** ✅
+          - **Noble ROM 2.x/3.x:** ✅ (SELinux need to be permissive)
+          - **AOSP ROMs:** ⚠️ (Most won't work, untested)
+          - **Stock ROM:** ⚠️ (May work, Untested)
+
+          ### Credits
+          Huge thanks to:
+          - **[blueskychan-dev](https://github.com/blueskychan-dev)** for the development of MindPatched kernel
+          - **bkurt (telegram)** and **@kret2poor** for toolchain assistance
+          - **[@xxmustafacooTR](https://github.com/xxmustafacooTR)** for developing xxTR Kernel
+          - **[@rifsxd](https://github.com/rifsxd)** for KernelSU-Next
+          - **[@backslashxx](https://github.com/backslashxx)** for get_cred_rcu backport introduction
+          - **simonpunk** for SuSFS
+          - **nook_ak47** for server support
+          - And the amazing community for helping resolve issues! 🌷
+
+          ### Source Code
+          - KernelSU-Next with SuSFS patches: [GitHub Repository](https://github.com/galaxybuild-project/KernelSU-Next)
+          - Kernel Source Code: [GitHub Repository](https://github.com/TheUnrealZaka/exynos-linux-stable)
+
+          ### Build Information
+          - Built by: ${{ env.MAINTAINER }}
+          - Build date: ${{ env.BUILD_TIME }}
+          - Version: v${{ env.KERNEL_VERSION }}-mindpatched-v${{ env.MINDPATCHED_VERSION }}
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Upload Build Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: kernel-build-${{ env.MINDPATCHED_VERSION }}
+        path: release/*
+        compression-level: 9
+        retention-days: 90
